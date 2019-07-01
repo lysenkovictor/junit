@@ -1,21 +1,23 @@
-package ua.skillsup.practice.junit.service;
+package ua.skillsup.practice.junit.service.impl;
 
 import ua.skillsup.practice.junit.model.*;
 import ua.skillsup.practice.junit.repository.BookingRepository;
+import ua.skillsup.practice.junit.service.BookingManager;
+import ua.skillsup.practice.junit.service.PaymentSystem;
+import ua.skillsup.practice.junit.service.SessionRegistry;
+import ua.skillsup.practice.junit.service.exception.NotFoundSeatNumber;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public class BookingManagerImpl implements BookingManager {
 
-// клиент
-// ид фильма
-// места которые хочет купить клиент
 
     private final PaymentSystem paymentSystem;
     private final BookingRepository bookingRepository;
     private final SessionRegistry sessionRegistry;
-    private BookingOrder bookingOrder;
+
 
     public BookingManagerImpl(PaymentSystem paymentSystem, BookingRepository bookingRepository, SessionRegistry sessionRegistry) {
         this.paymentSystem = paymentSystem;
@@ -25,7 +27,7 @@ public class BookingManagerImpl implements BookingManager {
 
     @Override
     public OrderId book(ClientId clientId, SessionId sessionId, List<Place> placesToBook) {
-        SessionInfo sessionInfo = sessionRegistry.getSessionInfo(sessionId);// фильм с местами
+        SessionInfo sessionInfo = sessionRegistry.getSessionInfo(sessionId);
         BigDecimal priceOrder = BigDecimal.ZERO;
 
         for (Place place : placesToBook) {
@@ -37,26 +39,26 @@ public class BookingManagerImpl implements BookingManager {
                     if (!bookedSeats.contains(seatNumber)) {
                         bookedSeats.add(seatNumber);
                         priceOrder = priceOrder.add(rowSession.getPricePerPlace());
-                        System.out.println(priceOrder);
                         break;
                     } else {
-                        throw new RuntimeException("Эти места уже заняты");
+                        throw new NotFoundSeatNumber(seatNumber, rowNumber);
                     }
-                } else {
-                    throw new RuntimeException("Выбранного ряда не существует");
                 }
             }
-
-            try {
-                paymentSystem.debit(clientId, priceOrder);
-            } catch (NullPointerException e) {
-                //откат
-                // и бросить исключение
-            } catch (RuntimeException e) {
-//               //бросить исключение но не откатывать
-            }
-
         }
+
+        if (priceOrder.compareTo(BigDecimal.ZERO) < 1) {
+            throw new IllegalArgumentException("priceOrder shouldb greater than 0");
+        }
+
+        paymentSystem.debit(clientId, priceOrder);
+        BookingOrder bookingOrder = new BookingOrder();
+        bookingOrder.setOrderId(OrderId.of(System.nanoTime()));
+        bookingOrder.setClientId(clientId);
+        bookingOrder.setBookingTime(LocalDateTime.now());
+        bookingOrder.setBookedPlaces(placesToBook);
+
+        bookingRepository.save(bookingOrder);
 
 
         return bookingOrder.getOrderId();
